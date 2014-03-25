@@ -1,14 +1,14 @@
-#include "pebble_os.h"
-#include "pebble_app.h"
-#include "pebble_fonts.h"
+#include <pebble.h>
+#include <pebble_app_info.h>
+#include <pebble_fonts.h>
 #include <string.h>
 
-#define MY_UUID { 0xE6, 0x87, 0x3A, 0x7D, 0xDD, 0x3E, 0x4F, 0xD3, 0x80, 0xD4, 0xD6, 0xFB, 0xB6, 0xD7, 0xD4, 0x01 }
-PBL_APP_INFO(MY_UUID,
-             "Hebrew Text", "Yuval Kalugny",
-             1, 0, /* App version */
-             DEFAULT_MENU_ICON,
-             APP_INFO_WATCH_FACE);
+//#define MY_UUID { 0xE6, 0x87, 0x3A, 0x7D, 0xDD, 0x3E, 0x4F, 0xD3, 0x80, 0xD4, 0xD6, 0xFB, 0xB6, 0xD7, 0xD4, 0x01 }
+//PBL_APP_INFO(MY_UUID,
+//             "Hebrew Text", "Liron Kaneti (Based On kalugny work)",
+//             2, 0, /* App version */
+//             DEFAULT_MENU_ICON,
+//             APP_INFO_WATCH_FACE);
 
 
 static const char * const MINUTES[] = {
@@ -103,15 +103,15 @@ static const char * const HOURS_WITH_TO[] = {
     "תחאל\nהרשע"
 };
 
-Window window;
-TextLayer timeLayer;
+Window *window;
+TextLayer *timeLayer;
 
 GFont font42;
 GFont font36;
 GFont font28;
 
 
-void get_heb_desc_from_time(PblTm* t, char* timeText){
+void get_heb_desc_from_time(struct tm* t, char* timeText){
 
     int hour = t->tm_hour;
     int minutes = t->tm_min;
@@ -147,75 +147,74 @@ void get_heb_desc_from_time(PblTm* t, char* timeText){
 
 }
 
-void handle_minute_tick(AppContextRef ctx, PebbleTickEvent *t) {
-    
-    (void)t;
-    (void)ctx;
+static void handle_minute_tick(struct tm *t,TimeUnits units_changed) {
     
     static char timeText[100] = {0}; // Needs to be static because it's used by the system later.
     
-    PblTm currentTime;
+    struct tm* currentTime;
     
-    get_time(&currentTime);
+	time_t now = time(NULL);
+	
+	currentTime = localtime(&now);
 
     strcpy(timeText, "");
-    //strcat(timeText, HOURS[hour]);
-    //strcat(timeText, " ");
-    //strcat(timeText, MINUTES[minutes - 1]);
     
-    get_heb_desc_from_time(&currentTime, timeText);
+    get_heb_desc_from_time(currentTime, timeText);
     
     int textLen = strlen(timeText);
     
     if (textLen < 20){
-        text_layer_set_font(&timeLayer, font42);
+        text_layer_set_font(timeLayer, font42);
     }
     else if (textLen < 40){
-        text_layer_set_font(&timeLayer, font36);
+        text_layer_set_font(timeLayer, font36);
     }
     else {
-        text_layer_set_font(&timeLayer, font28);
+        text_layer_set_font(timeLayer, font28);
     }
     
-    text_layer_set_text(&timeLayer, timeText);
+    text_layer_set_text(timeLayer, timeText);
     
 }
 
-void handle_init(AppContextRef ctx) {
-    (void)ctx;
+void handle_init(void) {
 
-    window_init(&window, "Hebrew Text");
-    window_stack_push(&window, true /* Animated */);
+    //window_init(&window, "Hebrew Text");
+	window = window_create();
+    window_stack_push(window, true);
     
-    window_set_background_color(&window, GColorBlack);
+    window_set_background_color(window, GColorBlack);
     
     // If you neglect to call this, all `resource_get_handle()` requests
     // will return NULL.
-    resource_init_current_app(&RESOURCES);
+    //resource_init_current_app(&RESOURCES);
+		
     
     font42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SIMPLE_42));
     font36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SIMPLE_36));
     font28 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_SIMPLE_28));
+	GRect rect = layer_get_frame(window_get_root_layer(window));
+	rect.origin = GPoint(0,0); 
 
+   	timeLayer = text_layer_create(rect);
+    text_layer_set_text_color(timeLayer, GColorWhite);
+    text_layer_set_text_alignment(timeLayer, GTextAlignmentRight);
+    text_layer_set_background_color(timeLayer, GColorClear);
+   
+    	
+  	time_t now = time(NULL);
+  	struct tm *current_time = localtime(&now);
+  	handle_minute_tick(current_time, MINUTE_UNIT);
+  	tick_timer_service_subscribe(MINUTE_UNIT, &handle_minute_tick);
     
-    text_layer_init(&timeLayer, GRect(0, 0, window.layer.frame.size.w, window.layer.frame.size.h));
-    text_layer_set_text_color(&timeLayer, GColorWhite);
-    text_layer_set_text_alignment(&timeLayer, GTextAlignmentRight);
-    text_layer_set_background_color(&timeLayer, GColorClear);
-    
-    handle_minute_tick(ctx, NULL);
-    
-    layer_add_child(&window.layer, &timeLayer.layer);
+  	layer_add_child(window_get_root_layer(window), text_layer_get_layer(timeLayer));
 }
-
-void pbl_main(void *params) {
-  PebbleAppHandlers handlers = {
-      .init_handler = &handle_init,
-      
-    .tick_info = {
-      .tick_handler = &handle_minute_tick,
-      .tick_units = MINUTE_UNIT
-     }
-  };
-  app_event_loop(params, &handlers);
+static void handle_deinit(void) {
+  text_layer_destroy(timeLayer);
+  window_destroy(window);
+}
+int main(void) {
+  handle_init(); 
+  app_event_loop();
+  handle_deinit();
 }
